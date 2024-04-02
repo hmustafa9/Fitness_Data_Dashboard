@@ -1,0 +1,393 @@
+---
+title: "FitBit dataset"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    theme: 
+      bg: "#101010"
+      fg: "#FDF7F7" 
+      primary: "#ED79F9"
+      base_font: !expr bslib::font_google("Prompt")
+      code_font: !expr bslib::font_google("JetBrains Mono")
+    orientation: rows
+    source_code: embed
+---
+
+```{r include=FALSE}
+pacman::p_load("tidyverse",'ggpubr', "here","skimr","janitor",'lubridate','ggrepel','shiny','readr')
+```
+```{r}
+library(devtools)
+library(flexdashboard)
+library(MASS)
+install_github("hmustafa9/R_proj")
+```
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Load data
+
+daily_activity <- read_csv("Fitabase Data 4.12.16-5.12.16/dailyActivity_merged.csv")
+daily_sleep <- read_csv("Fitabase Data 4.12.16-5.12.16/sleepDay_merged.csv")
+daily_calories <- read_csv("Fitabase Data 4.12.16-5.12.16/dailyCalories_merged.csv")
+daily_intensities <- read_csv("Fitabase Data 4.12.16-5.12.16/dailyIntensities_merged.csv")
+daily_steps <- read_csv("Fitabase Data 4.12.16-5.12.16/dailySteps_merged.csv")
+weight_log <- read_csv("Fitabase Data 4.12.16-5.12.16/weightLogInfo_merged.csv")
+```
+
+
+```{r include=FALSE}
+# Check data type per Variable
+str(daily_activity)  # ActivityDate is chr. Must be converted to Date format
+str(daily_sleep)  # SleepDay is chr. Must be converted to Date format
+str(daily_calories)  # ActivityDay is chr. Must be converted to Date format
+str(daily_intensities)  # ActivityDay is chr. Must be converted to Date format
+str(daily_steps)  # ActivityDay is chr. Must be converted to Date format
+str(weight_log)  # Date is chr. Must be converted to Date format
+```
+```{r include=FALSE}
+# Count unique combinations
+n_distinct(daily_activity$Id)   # 33 unique users
+n_distinct(daily_sleep$Id)      # 24  unique users
+n_distinct(daily_calories$Id)     # 33 unique users
+n_distinct(daily_intensities$Id)        # 33 unique users
+n_distinct(daily_steps$Id)     # 33 unique users
+n_distinct(weight_log$Id)   # 8 unique users
+```
+```{r include=FALSE}
+#Cleans names of an object
+clean_names(daily_activity)
+clean_names(daily_sleep)
+clean_names(daily_calories)
+clean_names(daily_intensities)
+clean_names(daily_steps)
+clean_names(weight_log)
+```
+```{r include=FALSE}
+# Check for missing data
+sum(missing <- !complete.cases(daily_activity))
+sum(missing <- !complete.cases(daily_sleep))
+sum(missing <- !complete.cases(daily_calories))
+sum(missing <- !complete.cases(daily_intensities))
+sum(missing <- !complete.cases(daily_steps))
+```
+```{r include=FALSE}
+# The above function bring errors for weight_log so .....
+sum(complete.cases(weight_log))  # weight_log has only two (2) complete cases
+head(weight_log)  # FAT variable is missing (NA) --->  we will delete Fat variable
+```
+```{r include=FALSE}
+# Create new table without Fat variable
+weight <-  subset(weight_log, select = -c(Fat))
+
+head(weight)
+sum(complete.cases(weight))  # weight has now 67 complete cases
+```
+```{r include=FALSE}
+# Find duplicates
+sum(duplicated(daily_activity))
+sum(duplicated(daily_sleep))    # Find 3 duplicates
+sum(duplicated(daily_calories))
+sum(duplicated(daily_intensities))
+sum(duplicated(daily_steps))
+sum(duplicated(weight))
+
+# Remove duplicates
+glimpse(daily_sleep)    # Return Rows: 413
+daily_sleep <- daily_sleep[!duplicated(daily_sleep),]
+glimpse(daily_sleep) # Return Rows: 410 after cleaning
+```
+```{r include=FALSE}
+# Mutate date from chr to date data type and check structure of data
+#Daily_Activity
+daily_activity$ActivityDate =as.Date(daily_activity$ActivityDate, "%m/%d/%y")
+daily_activity <- daily_activity %>% 
+  rename(ActivityDay = ActivityDate)   # rename so to same to all variables
+str(daily_activity)
+
+#daily_sleep
+daily_sleep$SleepDay =as.Date(daily_sleep$SleepDay, "%m/%d/%y")
+daily_sleep <- daily_sleep %>% 
+  rename(ActivityDay = SleepDay)   # rename so to same to all variables
+str(daily_sleep)
+
+#daily_calories
+daily_calories$ActivityDay =as.Date(daily_calories$ActivityDay, "%m/%d/%y")
+str(daily_calories)
+
+#daily_intensities
+daily_intensities$ActivityDay =as.Date(daily_intensities$ActivityDay, "%m/%d/%y")
+str(daily_intensities)
+
+#daily_steps
+daily_steps$ActivityDay =as.Date(daily_steps$ActivityDay, "%m/%d/%y")
+str(daily_steps)
+
+#weight
+weight$Date =as.Date(weight$Date, "%m/%d/%y")
+weight <- weight %>% 
+  rename(ActivityDay = Date)   # rename so to same to all variables
+str(weight)
+```
+```{r include=FALSE}
+##########################################
+# Merge data to create a super ONE TABLE to see correlations 
+############################################
+daily_activity_sleep <- merge(daily_activity, daily_sleep, by = c("Id", "ActivityDay"))
+head(daily_activity_sleep)
+```
+```{r include=FALSE}
+daily_activity_sleep <- daily_activity_sleep %>% 
+  mutate(act_weekday = weekdays(as.Date(ActivityDay, "%m/%d/%Y")))
+head(daily_activity_sleep)
+```
+```{r include=FALSE}
+##### Create a new data set, shorten name
+myData <- daily_activity_sleep
+head(myData)
+```
+```{r include=FALSE}
+myData <- myData %>% 
+  mutate(VeryActiveHours =  if_else(VeryActiveMinutes != 0, 
+                                    round(VeryActiveMinutes/60,2), 
+                                     0)) %>% 
+  mutate(FairlyActiveHours =  if_else(FairlyActiveMinutes != 0, 
+                                        round(FairlyActiveMinutes/60,2), 
+                                    0)) %>% 
+  mutate(LightlyActiveHours =  if_else(LightlyActiveMinutes != 0,
+                                         round(LightlyActiveMinutes/60,2), 
+                                      0)) %>% 
+  mutate(SedentaryHours =  if_else(SedentaryMinutes != 0, 
+                                     round(SedentaryMinutes/60,2), 
+                                      0)) %>% 
+  mutate(TotalHoursAsleep =  if_else(TotalMinutesAsleep != 0, 
+                                       round(TotalMinutesAsleep/60,2), 
+                                      0)) %>% 
+  mutate(TotalHoursInBed =  if_else(TotalTimeInBed != 0, 
+                                   round(TotalTimeInBed/60,2), 
+                                     0))
+```
+```{r}
+mode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+myData$Id <-as.numeric(factor(myData$Id))
+
+```
+
+Activity Dashboard {data-orientation=rows}
+=====================================     
+   
+Inputs {.sidebar}
+-------------------------------------
+
+*Daily Steps by:*
+
+```{r plot-option}
+
+
+selectInput("var", label = "Please choose variable:",
+            choices = names(subset(myData, select=c( Id, ActivityDay, act_weekday))))
+
+sliderInput("Steps", "Steps interval:",
+                  min = min(myData$TotalSteps), max = max(myData$TotalSteps), value = c(min(myData$TotalSteps), max(myData$TotalSteps)), step =1000)
+
+
+```
+
+
+Row
+-----------------------------------------------------------------------
+  
+### Lowest Daily Steps {.value-box}
+  
+```{r}
+renderValueBox({
+  rate <- formatC(min(myData$TotalSteps), digits = 0, big.mark =" ", format = "f")
+  valueBox(
+    value = rate,
+    icon = "fa fa-user-o")
+  
+})
+
+```
+
+
+
+### Most frequent Daily Steps {.value-box}
+
+```{r}
+
+
+renderValueBox({
+  rate <- formatC(mode(myData$TotalSteps), digits = 0, big.mark =" ", format = "f")
+  valueBox(
+    value = rate,
+    icon = "fa fa-user-o")
+})
+```
+
+
+### Median of Daily Steps {.value-box}
+
+```{r}
+
+renderValueBox({
+  rate <- formatC(median(myData$TotalSteps), digits = 0, big.mark =" ", format = "f")
+  valueBox(
+    value = rate,
+    icon = "fa fa-user-o")
+  
+})
+```
+
+### Average Daily Steps {.value-box}
+
+```{r}
+renderValueBox({
+  rate <- formatC(mean(myData$TotalSteps), digits = 0, big.mark =" ", format = "f")
+  valueBox(
+    value = rate,
+    icon = "fa fa-user-o")
+  
+})
+```
+
+### Highest Daily Steps {.value-box}
+
+```{r}
+renderValueBox({
+  rate <- formatC(max(myData$TotalSteps), digits = 0, big.mark =" ", format = "f")
+  valueBox(
+    value = rate,
+    icon = "fa fa-user-o")
+  
+})
+``` 
+
+Row
+-------------------------------------
+
+### Daily Steps by: {data-width=550}
+
+```{r}
+selected <- reactive({  myData[, c(input$var)]
+              })
+
+
+renderPlot({
+  data_filtered <- myData %>%
+      filter(between(TotalSteps, input$Steps[1], input$Steps[2]))
+  
+  ggplot(data_filtered, aes_string(x=input$var, y=data_filtered$TotalSteps)) + 
+  geom_violin(aes_string(fill=input$var), trim=FALSE) +
+  geom_boxplot(width=0.4,color="black",fill="violet",alpha=0.2)+
+  stat_summary(fun=mean, geom="point", shape=20, size=5)+
+  ggtitle(input$var) +
+      ylab(expression("ToTal Steps"))
+ 
+  })
+
+```
+
+    
+### Daily Steps {data-width=400}
+    
+```{r user-plot}
+
+
+renderPlot({
+    myData %>%
+      filter(
+        between(TotalSteps, input$Steps[1], input$Steps[2])) %>%
+      ggplot(aes(TotalSteps)) +
+      geom_histogram(color="black", fill="violet") +
+      xlab(expression("ToTal Steps"))
+  })
+
+```
+
+
+
+
+   Visualize Data
+=====================================  
+    
+
+-------------------------------------
+   
+### Statistics {data-width=400}
+```{r user-plot1}
+# function to select only character columns
+charnames <- function(x){
+  if(class(x) == "data.frame"){
+    a <- Filter(is.character,x)
+    return(colnames(a))
+  }
+}
+
+
+selectInput(
+  inputId = "group",label = "Select Group Variable (X-axis)",choices = names(subset(myData, select=c( Id, ActivityDay, act_weekday), multiple = FALSE, selected = "ActivityDay"
+)))
+
+
+selectInput(
+  inputId = "subgroup",label = "Select SubGroup Variables",choices = names(subset(myData, select=c(Id, act_weekday), multiple = FALSE, selected = "act_weekday"
+)))
+
+selectInput(
+  inputId = "value",label = "Set Plot Scale (Y-axis)",choices = numericcols::numericcols(myData)[-1], multiple = FALSE,selected = "TotalSteps"
+)
+
+actionButton("submit","Submit")
+
+```
+
+### Bar Plot {data-width=1000}
+```{r bar-plot}
+
+renderPlot({
+  input$submit
+  isolate(ggplot(myData, aes_string(fill=input$subgroup, y=input$value, x=input$group)) + 
+    geom_bar(position= "dodge", stat = "identity")+ theme(legend.position="bottom",legend.box = "horizontal"))
+})
+
+
+```
+
+OLS {data-orientation=rows}
+=====================================     
+   
+Inputs {.sidebar}
+--------------------------------------
+    
+**Settings**
+    
+```{r}
+selectInput("depo", label = "Please choose dependent variable:", choices = names(myData), selected = "TotalDistance")
+checkboxGroupInput("indo", label = "Please choose independent variables:",choices = names(myData), selected = "act_weekday")
+
+actionButton("submit2", "Submit")
+
+```
+   
+Row 
+-------------------------------------
+   
+
+### OLS
+    
+```{r}
+renderPrint({
+  input$submit2
+  isolate(input$depo)
+  isolate(input$indo)
+  form <- isolate(sprintf("%s~%s",input$depo,paste0(input$indo,collapse="+")))
+  print(form)
+  
+  lm <-isolate(lm(formula(form),family=binomial(),data=myData))
+  print(summary(lm))
+
+})
+```
+
